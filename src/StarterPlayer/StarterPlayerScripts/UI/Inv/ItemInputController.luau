@@ -15,6 +15,10 @@ local DropItemEvent: RemoteFunction = Remotes:WaitForChild("DropItem")
 
 local player = Players.LocalPlayer
 
+type ItemReference = {
+	InvType: string,
+	Index: number
+}
 type Inventory = ClientInventory.Inventory
 type ItemData = ClientInventory.ItemData
 
@@ -117,12 +121,13 @@ function ItemManager:DropItem()
 	local itemData = self._inventory:GetItemInHotbarSlot(slotIndex)
 	if not itemData then return end
 	
-	local success = DropItemEvent:InvokeServer(slotIndex)
+	local success = DropItemEvent:InvokeServer(slotIndex, 1)
 	if success then
-		self._inventory:ClearItemFromHotbarSlot(slotIndex)
-		print(self, slotIndex)
+		self._inventory:RemoveItemFromHotbarSlot(slotIndex, 1)
 		unhiglightSlot(self, slotIndex)
 		self._currentActivatedSlot = {}
+	else
+		player:Kick("Major invalid move. Please rejoin the game.")
 	end
 end
 
@@ -439,44 +444,28 @@ function ItemManager:_onSlotPressed(ref: {[string]: number | string}, inputType:
 			return warn("Invalid move.")
 		end
 
+		-- here onwards, local inv is updated but not ui
+
 		if inputType == Enum.UserInputType.MouseButton1 then
-			
-			if not itemInSlot then
-				self:_addItem(ref, self._draggedItemStack.ItemId, self._draggedItemStack.Quantity)
-				self:_stopDragVisuals()
-				
-			elseif itemInSlot.ItemId == self._draggedItemStack.ItemId and (ItemDescM[itemInSlot.ItemId].Stacking) then
-				self:_addItem(ref, self._draggedItemStack.ItemId, self._draggedItemStack.Quantity)
-				self:_stopDragVisuals()
-				
+			if itemInSlot and itemInSlot.ItemId ~= self._draggedItemStack.ItemId then
+				self._draggedItemStack = {ItemId = itemInSlot.ItemId, Quantity = itemInSlot.Quantity}
 			else
-				local itemToSwap = {ItemId = itemInSlot.ItemId, Quantity = itemInSlot.Quantity}
-				self:_clearSlot(ref)
-				self:_addItem(ref, self._draggedItemStack.ItemId, self._draggedItemStack.Quantity)
-				self._draggedItemStack = itemToSwap
-				self:_updateDragVisuals()
+				self._draggedItemStack = nil
 			end
-
 		elseif inputType == Enum.UserInputType.MouseButton2 then
-			if not itemInSlot then
-				self:_addItem(ref, self._draggedItemStack.ItemId, 1)
-				self._draggedItemStack.Quantity -= 1
-			elseif itemInSlot.ItemId == self._draggedItemStack.ItemId then
-				self:_addItem(ref, self._draggedItemStack.ItemId, 1)
-				self._draggedItemStack.Quantity -= 1
-			else
-				local itemToSwap = {ItemId = itemInSlot.ItemId, Quantity = itemInSlot.Quantity}
-				self:_clearSlot(ref)
-				self:_addItem(ref, self._draggedItemStack.ItemId, self._draggedItemStack.Quantity)
-				self._draggedItemStack = itemToSwap
-				self:_updateDragVisuals()
-				return
-			end
+			self._draggedItemStack.Quantity -= 1
+		end
 
-			self:_updateDragVisuals()
-			if self._draggedItemStack and self._draggedItemStack.Quantity <= 0 then
-				self:_stopDragVisuals()
-			end
+		self:_updateDragVisuals()
+		self._inventory:_updateAllSlots()
+		if not self._draggedItemStack or self._draggedItemStack.Quantity <= 0 then
+			self:_stopDragVisuals()
+		else
+			-- something is still there, update the old slot
+			local funcName = "RemoveItemFrom" .. self._draggedItemOldRef.InvType .. "Slot"
+			if self._draggedItemOldRef.InvType == "Main" then funcName = "RemoveItemFromSlot" end
+
+			self._inventory[funcName](self._inventory, self._draggedItemOldRef.Index, self._draggedItemStack.Quantity)
 		end
 	end
 end

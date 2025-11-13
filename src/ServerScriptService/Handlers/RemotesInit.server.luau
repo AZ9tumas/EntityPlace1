@@ -16,6 +16,6 @@ EquipSlot.OnServerInvoke = function(plr: Player, equipStats: boolean, ...)
 	end
 end
 
-DropItem.OnServerInvoke = function(plr: Player, slotIndex: number)
-	return RemotesHandler.DropItem(plr, slotIndex)
+DropItem.OnServerInvoke = function(plr: Player, slotIndex: number, quantity: number?)
+	return RemotesHandler.DropItem(plr, slotIndex, quantity or 1)
 end

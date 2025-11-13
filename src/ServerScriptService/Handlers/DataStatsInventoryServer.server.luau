@@ -84,7 +84,7 @@ local function onPlayerAdded(player: Player)
 		for itemName, v in pairs(ItemDesc) do
 			profile.Data.Inventory.Main[c] = {
 				ItemId = itemName,
-				Quantity = 1
+				Quantity = 10
 			}
 			c += 1
 			

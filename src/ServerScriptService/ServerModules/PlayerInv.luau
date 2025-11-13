@@ -53,7 +53,7 @@ function PlayerInventories.loadInventory(player: Player, inventoryData: PlayerIn
 	for invType, invTable in pairs(inventoryData) do
 		copy[invType] = {}
 		for i, v in pairs(invTable) do
-			if v and v.ItemId then
+			if v and v.ItemId and v.Quantity and v.Quantity > 0 then
 				copy[invType][tonumber(i)] = {ItemId = tostring(v.ItemId), Quantity = tonumber(v.Quantity)}
 			end
 		end
@@ -68,7 +68,10 @@ function PlayerInventories.destroyInventory(player: Player)
 end
 
 function PlayerInventories.MoveItem(player: Player, fromRef: ItemReference, toRef: ItemReference, quantity: number?): boolean
-	if (toRef.Index == fromRef.Index and toRef.InvType == fromRef.InvType) then return true end
+	if (toRef.Index == fromRef.Index and toRef.InvType == fromRef.InvType) then
+		return InvokeInventoryAction:InvokeClient(player, "LoadFromSerialized", inventories[player.UserId], false)
+	end
+	
 	local playerInv = inventories[player.UserId]
 	if not playerInv then warn("No player inv.") return false end
 
@@ -106,14 +109,15 @@ function PlayerInventories.MoveItem(player: Player, fromRef: ItemReference, toRe
 			itemFrom.Quantity = remainingQuantity
 		end
 	else
-		
+		if remainingQuantity ~= 0 then return false end
 		fromInv[fromRef.Index], toInv[toRef.Index] = toInv[toRef.Index], fromInv[fromRef.Index]
 	end
-	
-	return true
+
+	return InvokeInventoryAction:InvokeClient(player, "LoadFromSerialized", inventories[player.UserId], false)
 end
 
-function PlayerInventories.AddItem(player: Player, ref: ItemReference, itemId: string, quantity: number): boolean
+-- we probably wont need this...
+function PlayerInventories.AddItem(player: Player, itemId: string, quantity: number, ref: ItemReference): boolean
 	local playerInv = inventories[player.UserId]
 	if not playerInv or quantity <= 0 then return false end
 
@@ -138,47 +142,6 @@ function PlayerInventories.AddItem(player: Player, ref: ItemReference, itemId: s
 	InvokeInventoryAction:InvokeClient(player, funcCall, ref.Index, itemId, quantity)
 	
 	return true
-end
-
-function PlayerInventories.FindAvailableSlotForItem(player: Player, itemId: string): ItemReference?
-	local playerInv = inventories[player.UserId]
-	if not playerInv then return nil end
-
-	local itemMeta = itemInfo[itemId]
-	if not itemMeta then return nil end
-
-	local inventoriesToSearch = {"Main", "Hotbar"}
-	local maxSlots = { Main = 24, Hotbar = 8 }
-
-	-- First, find a slot to stack with
-	if itemMeta.Stacking then
-		for _, invType in ipairs(inventoriesToSearch) do
-			local inv = playerInv[invType]
-			if inv then
-				for i = 1, maxSlots[invType] do
-					local slot = inv[i]
-					if slot and slot.ItemId == itemId and slot.Quantity < (itemMeta.MaxStack or 64) then
-						return { InvType = invType, Index = i }
-					end
-				end
-			end
-		end
-	end
-
-	-- If no stackable slot, find an empty slot
-	for _, invType in ipairs(inventoriesToSearch) do
-		local inv = playerInv[invType]
-		if inv then
-			for i = 1, maxSlots[invType] do
-				local slot = inv[i]
-				if not slot or not slot.ItemId then
-					return { InvType = invType, Index = i }
-				end
-			end
-		end
-	end
-
-	return nil
 end
 
 function PlayerInventories.RemoveItemFromSlot(player: Player, ref: ItemReference, quantity: number): boolean
@@ -225,7 +188,7 @@ function PlayerInventories.GetSerializedData(player: Player): PlayerInventory?
 
 		for i = 1, maxIndex do
 			local itemData = invTable[i]
-			if itemData and itemData.ItemId then
+			if itemData and itemData.ItemId and itemData.Quantity and itemData.Quantity > 0 then
 				copy[invType][i] = {
 					ItemId = itemData.ItemId,
 					Quantity = itemData.Quantity

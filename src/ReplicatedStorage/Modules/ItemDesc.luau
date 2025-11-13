@@ -28,7 +28,7 @@ return {
 		Icon = "116077391812048",
 		Type = "Weapon",
 		Rarity = "Common",
-		Stacking = false
+		Stacking = true
 	},
 	
 	["IronHelmet"] = {

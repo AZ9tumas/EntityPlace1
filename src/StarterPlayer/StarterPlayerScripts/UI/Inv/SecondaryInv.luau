@@ -307,7 +307,7 @@ function ClientInventory:Init()
 	return self
 end
 
-function ClientInventory:LoadFromSerialized(serializedData)
+function ClientInventory:LoadFromSerialized(serializedData, updateUI: boolean?)
 	if not (self._isInitialized and self._isArmorInitialized and self._isOffhandInitialized and self._isHotbarInitialized) then return false end
 	
 	self.Slots = {}
@@ -331,7 +331,7 @@ function ClientInventory:LoadFromSerialized(serializedData)
 	end
 
 	self.OffhandSlot = serializedData["Offhand"][1]
-	self:_updateAllSlots()
+	if updateUI ~= false then self:_updateAllSlots() end
 
 	return true
 end
