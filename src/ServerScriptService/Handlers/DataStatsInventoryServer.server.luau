@@ -66,7 +66,7 @@ local GameProfileStore = ProfileStore.New(
 local PlayerProfiles = {}
 
 local function onPlayerAdded(player: Player)
-	local profile: ProfileStore.Profile = GameProfileStore:StartSessionAsync("Player_" .. player.UserId)
+	local profile = GameProfileStore:StartSessionAsync("Player_" .. player.UserId)
 
 	if not profile then
 		player:Kick("Your data could not be loaded. Please rejoin.\nErrorCode: 000")

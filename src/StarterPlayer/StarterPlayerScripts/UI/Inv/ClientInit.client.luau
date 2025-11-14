@@ -106,11 +106,11 @@ UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
 	elseif input.KeyCode == Enum.KeyCode.Q then
 		inptControllerObj:DropItem()
 		
-	elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
-		inptControllerObj:ActivateCurrentTool()
-		
 	elseif hotbarKeys[input.KeyCode] then
-		inptControllerObj:ActiveHotbarSlot(hotbarKeys[input.KeyCode])	
+		inptControllerObj:ActiveHotbarSlot(hotbarKeys[input.KeyCode])
+
+	elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+		inptControllerObj._itemManager:ActivateCurrentItem()
 	end
 	
 	paramsLocal.debounce = false
@@ -120,6 +120,6 @@ UserInputService.InputEnded:Connect(function(input, gameProcessedEvent)
 	if gameProcessedEvent then return end
 	
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		inptControllerObj:DeactivateCurrentTool()
+		inptControllerObj._itemManager:DeactivateCurrentItem()
 	end
 end)

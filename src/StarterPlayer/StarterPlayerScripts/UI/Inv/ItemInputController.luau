@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ItemDescM = require(ReplicatedStorage.Modules.ItemDesc)
 local ClientInventory = require(script.Parent.SecondaryInv)
+local ItemManagerModule = require(script.Parent.ItemManager)
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local InvokeInventoryAction : RemoteFunction = Remotes:WaitForChild("InvokeInventoryAction")
@@ -22,11 +23,11 @@ type ItemReference = {
 type Inventory = ClientInventory.Inventory
 type ItemData = ClientInventory.ItemData
 
-local ItemManager = {}
-ItemManager.__index = ItemManager
+local ItemInputController = {}
+ItemInputController.__index = ItemInputController
 
-function ItemManager.new(invFrame: Frame)
-	local self = setmetatable({}, ItemManager)
+function ItemInputController.new(invFrame: Frame)
+	local self = setmetatable({}, ItemInputController)
 
 	self._inventory = ClientInventory.new(24):Init()
 	self._invFrame = invFrame
@@ -49,7 +50,7 @@ function ItemManager.new(invFrame: Frame)
 	self._draggedItemStack = nil :: ItemData?
 	self._draggedItemOldRef = nil
 	
-	self._currentActivatedSlot = {} -- {Item = ..., slotIndex = {}, Tool = ...}
+	self._itemManager = ItemManagerModule.new()
 
 	self:_initSlots()
 	self:_initHoverSystem()
@@ -57,7 +58,7 @@ function ItemManager.new(invFrame: Frame)
 	return self
 end
 
-function ItemManager:Initialize()
+function ItemInputController:Initialize()
 	if self._isActive then return end
 	self._isActive = true
 
@@ -93,39 +94,21 @@ local function unhiglightSlot(self, slotIndex)
 	thing.Color = Color3.fromRGB(255, 227, 166)
 end
 
-local function unequip(self, slotIndex)
-	local itemData = self._currentActivatedSlot.Item
-	local asset = self._currentActivatedSlot.Tool
-
-	local events = asset:FindFirstChild("Events")
-	if not events then self._currentActivatedSlot = {} return end
-
-	local unequip = events:FindFirstChild("Unequip") :: BindableEvent
-	if not unequip then self._currentActivatedSlot = {} return end
-
-	unequip:Fire()
-	task.wait()
-
-	EquipSlotEvent:InvokeServer(false, slotIndex)
-end
-
 -- Dropping Items
-function ItemManager:DropItem()
-	if self._currentActivatedSlot.Item then
-		unequip(self, self._currentActivatedSlot.slotIndex)
-	end
-
-	local slotIndex = self._currentActivatedSlot.slotIndex
-	if not slotIndex then return end
+function ItemInputController:DropItem()
+	local currentItem = self._itemManager._currentActivatedItem
+	if not currentItem then return end
+	
+	local slotIndex = currentItem.slotIndex
+	self._itemManager:TerminateItem()
 	
 	local itemData = self._inventory:GetItemInHotbarSlot(slotIndex)
 	if not itemData then return end
 	
 	local success = DropItemEvent:InvokeServer(slotIndex, 1)
 	if success then
-		self._inventory:RemoveItemFromHotbarSlot(slotIndex, 1)
+		--self._inventory:RemoveItemFromHotbarSlot(slotIndex, 1)
 		unhiglightSlot(self, slotIndex)
-		self._currentActivatedSlot = {}
 	else
 		player:Kick("Major invalid move. Please rejoin the game.")
 	end
@@ -139,71 +122,23 @@ Here, we ask the server to get the tool into the backpack and call these events 
 
 ]]
 
-function ItemManager:ActiveHotbarSlot(slotIndex: number)
-	if self._currentActivatedSlot.slotIndex then
-		-- unhighlight that slot
-		unhiglightSlot(self, self._currentActivatedSlot.slotIndex)
-		if self._currentActivatedSlot.Item then
-			-- deactivate
-			unequip(self, self._currentActivatedSlot.slotIndex)
-		end
-		
-		self._currentActivatedSlot = {}; return;
+function ItemInputController:ActiveHotbarSlot(slotIndex: number)
+	local currentItem = self._itemManager._currentActivatedItem
+	
+	if currentItem then
+		unhiglightSlot(self, currentItem.slotIndex)
+		self._itemManager:TerminateItem()
+		return
 	end
 	
-	-- Equip
 	local itemData = self._inventory:GetItemInHotbarSlot(slotIndex)
 	if not itemData then return end
-
-	self._currentActivatedSlot = {slotIndex = slotIndex}
 	
-	-- if we find an item we have to highlight it
 	highlightSlot(self, slotIndex)
-	
-	local success, canActivate = EquipSlotEvent:InvokeServer(true, slotIndex)
-	if not success or not canActivate then return end
-	
-	local asset = player.Backpack:FindFirstChild(itemData.ItemId)
-	self._currentActivatedSlot = {Item = itemData, slotIndex = slotIndex, Tool = asset}
-	
-	task.wait()
-	
-	ContentProvider:PreloadAsync(asset:GetDescendants(), function(a, b)
-		print(a, b)
-	end)
-	
-	local events = asset:FindFirstChild("Events")
-	if not events then return end -- died?
-	
-	local equip = events:FindFirstChild("Equip") :: BindableEvent
-	if not equip then return end
-	
-	equip:Fire()
+	self._itemManager:InitializeItem(itemData, slotIndex)
 end
 
-function ItemManager:ActivateCurrentTool()
-	if not self._currentActivatedSlot.Item then return end
-
-	local tool: Tool = self._currentActivatedSlot.Tool
-	local events = tool:FindFirstChild("Events")
-	if not events then return end
-
-	local activateBR: BindableEvent = events:FindFirstChild("ToolActivate")
-	activateBR:Fire()
-end
-
-function ItemManager:DeactivateCurrentTool()
-	if not self._currentActivatedSlot.Item then return end
-
-	local tool: Tool = self._currentActivatedSlot.Tool
-	local events = tool:FindFirstChild("Events")
-	if not events then return end
-
-	local deactivateBR: BindableEvent = events:FindFirstChild("ToolDeactivate")
-	deactivateBR:Fire()
-end
-
-function ItemManager:CleanUp()
+function ItemInputController:CleanUp()
 	if not self._isActive then return end
 	self._isActive = false
 
@@ -220,12 +155,11 @@ function ItemManager:CleanUp()
 	self:_cancelDrag()
 
 	self._templateFrame.Visible = false
-	self._currentActivatedSlot = {}
 end
 
 -------------------------------------------------------------------------------------------------------------------------------
 
-function ItemManager:_updateTooltip()
+function ItemInputController:_updateTooltip()
 	self._templateFrame.Visible = false
 	
 	if self._draggedItemStack or not self._currentlyHoveredRef then return end
@@ -245,7 +179,7 @@ function ItemManager:_updateTooltip()
 	self._templateFrame.Visible = true
 end
 
-function ItemManager:_initHoverSystem()
+function ItemInputController:_initHoverSystem()
 	local hoverContainer = self._invFrame.Tabs.Items.Frame
 
 	hoverContainer.MouseLeave:Connect(function()
@@ -261,7 +195,7 @@ function ItemManager:_initHoverSystem()
 	end)
 end
 
-function ItemManager:_initSlots()
+function ItemInputController:_initSlots()
 	local slotsContainer = self._invFrame.Tabs.Items.Frame.Menu
 	for i = 1, self._inventory.MaxSlots do
 		local slotButton = slotsContainer:FindFirstChild("Item" .. i)
@@ -348,7 +282,7 @@ function ItemManager:_initSlots()
 	end
 end
 
-function ItemManager:_connectGlobalInput()
+function ItemInputController:_connectGlobalInput()
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 		if input.KeyCode == Enum.KeyCode.Escape and self._draggedItemStack then
@@ -357,7 +291,7 @@ function ItemManager:_connectGlobalInput()
 	end)
 end
 
-function ItemManager:_getItem(ref)
+function ItemInputController:_getItem(ref)
 	if ref.InvType == "Main" then
 		return self._inventory:GetItemInSlot(ref.Index)
 	elseif ref.InvType == "Armor" then
@@ -369,7 +303,7 @@ function ItemManager:_getItem(ref)
 	end
 end
 
-function ItemManager:_addItem(ref, itemId, quantity)
+function ItemInputController:_addItem(ref, itemId, quantity)
 	if ref.InvType == "Main" then
 		self._inventory:AddItemToSlot(ref.Index, itemId, quantity)
 	elseif ref.InvType == "Armor" then
@@ -381,7 +315,7 @@ function ItemManager:_addItem(ref, itemId, quantity)
 	end
 end
 
-function ItemManager:_clearSlot(ref)
+function ItemInputController:_clearSlot(ref)
 	if ref.InvType == "Main" then
 		self._inventory:ClearSlot(ref.Index)
 	elseif ref.InvType == "Armor" then
@@ -393,7 +327,7 @@ function ItemManager:_clearSlot(ref)
 	end
 end
 
-function ItemManager:_removeFromSlot(ref, qty)
+function ItemInputController:_removeFromSlot(ref, qty)
 	if ref.InvType == "Main" then
 		self._inventory:RemoveItemFromSlot(ref.Index, qty)
 	elseif ref.InvType == "Armor" then
@@ -405,7 +339,7 @@ function ItemManager:_removeFromSlot(ref, qty)
 	end
 end
 
-function ItemManager:_onSlotPressed(ref: {[string]: number | string}, inputType: Enum.UserInputType)
+function ItemInputController:_onSlotPressed(ref: {[string]: number | string}, inputType: Enum.UserInputType)
 	local itemInSlot = self:_getItem(ref)
 	self._currentlyHoveredRef = nil
 	self:_updateTooltip()
@@ -470,13 +404,13 @@ function ItemManager:_onSlotPressed(ref: {[string]: number | string}, inputType:
 	end
 end
 
-function ItemManager:_cancelDrag()
+function ItemInputController:_cancelDrag()
 	if not self._draggedItemStack or not self._draggedItemOldRef then return end
 	self:_addItem(self._draggedItemOldRef, self._draggedItemStack.ItemId, self._draggedItemStack.Quantity)
 	self:_stopDragVisuals()
 end
 
-function ItemManager:_updateDragVisuals()
+function ItemInputController:_updateDragVisuals()
 	if not self._draggedItemStack then return end
 	local itemConfig = ItemDescM[self._draggedItemStack.ItemId]
 	if itemConfig then
@@ -485,7 +419,7 @@ function ItemManager:_updateDragVisuals()
 	end
 end
 
-function ItemManager:_startDragVisuals()
+function ItemInputController:_startDragVisuals()
 	if not self._draggedItemStack then return end
 	self:_updateDragVisuals()
 	self._dragImage.Visible = true
@@ -496,7 +430,7 @@ function ItemManager:_startDragVisuals()
 	end)
 end
 
-function ItemManager:_stopDragVisuals()
+function ItemInputController:_stopDragVisuals()
 	self._draggedItemStack = nil
 	self._draggedItemOldRef = nil
 	self._dragImage.Visible = false
@@ -507,4 +441,4 @@ function ItemManager:_stopDragVisuals()
 	end
 end
 
-return ItemManager
+return ItemInputController

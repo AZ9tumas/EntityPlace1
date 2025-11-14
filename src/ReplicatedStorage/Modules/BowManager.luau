@@ -513,7 +513,7 @@ function BowManager:ShootBow(Player: Player, MousePosition: Vector3, TimeElapsed
 	end
 end
 
-function BowManager:ShootArrow(Player: Player, MousePosition: Vector3, TimeElapsed: never)
+function BowManager:ShootArrow(Player: Player, MousePosition: Vector3, TimeElapsed: number)
 	local Character: Model = Player.Character
 	if not Character or not Character:FindFirstChild("Arrow") then return end
 	local PlayerArrow: MeshPart = Character.Arrow and Character.Arrow:FindFirstChild("Cylinder.001")
